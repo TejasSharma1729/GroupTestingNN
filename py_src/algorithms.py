@@ -18,17 +18,20 @@ ALGORTIHMS = [
 class BaseANN(object):
     def __init__(self) -> None:
         self.range_algo = False
+        self.knn_algo = False
+        
         self.__params = ""
+        
 
 
-    def fit(self, dataset):
+    def fit(self, X):
         """
         Build the index for the data points given in dataset name.
         Assumes that after fitting index is loaded in memory.
         """
         print("This is default 'fit()' function")
 
-    def load_index(self, dataset):
+    def load_index(self, X):
         """
         Load the index for dataset. Returns False if index
         is not available, True otherwise.
@@ -65,12 +68,13 @@ class BaseANN(object):
 class FAISS_HNSW(BaseANN):
     def __init__(self, ef_factor=2, ef_constr = 32) -> None:
         super().__init__()
+        self.knn_algo = True
         self.range_algo = False
         self.M = 32
         self.efSearch_factor = ef_factor
         self.efConstruction = ef_constr
 
-    def fit(self, X, save_index=True):
+    def fit(self, X):
         self.index = faiss.index_factory(X.shape[1], 'HNSW32', faiss.METRIC_INNER_PRODUCT)
         self.index.hnsw.efConstruction = self.efConstruction
 
@@ -93,12 +97,13 @@ class FAISS_HNSW(BaseANN):
 class SCANN(BaseANN):
     def __init__(self, num_leaves_factor=2, num_leaves_to_search_factor=4, reorder_factor=16) -> None:
         super().__init__()
+        self.knn_algo = True
         self.range_algo = False
         self.nlf = num_leaves_factor
         self.nltsf = num_leaves_to_search_factor
         self.rf = reorder_factor
 
-    def fit(self, X, save_index=True):
+    def fit(self, X):
         self.nl = self.nlf*int(np.sqrt(X.shape[0]))
         self.X = X
         self.searcher = scann.scann_ops_pybind.builder(X, config.NUM_NEIGHBOURS, "dot_product").tree(
@@ -124,8 +129,7 @@ class FAISS_GT(BaseANN):
         super().__init__()
         self.range_algo = True
 
-    def fit(self, X, save_index=True):
-        print("Not saving index for FAISS")
+    def fit(self, X):
         pass
 
     def load_index(self, X):
@@ -157,9 +161,9 @@ class FAISS_IVFlat(BaseANN):
         self.nprobe = nprobe
         self.__params = f"l{nlist}_p{nprobe}"
 
-    def fit(self, X, save_index=True):
-        print("Not saving index for FAISS")
-
+    def fit(self, X):
+        pass 
+    
     def load_index(self, X):
         self.d = X.shape[1]
         self.quantizer = faiss.IndexFlatIP(self.d)
@@ -192,7 +196,7 @@ class FALCONN(BaseANN):
         self.num_probes = num_probes_factor * num_tables 
         self.num_tables = num_tables
 
-    def fit(self, X, save_index=True):
+    def fit(self, X):
 
         self.__params = falconn.get_default_parameters(X.shape[0], X.shape[1])
         self.__params.lsh_family = falconn.LSHFamily.CrossPolytope

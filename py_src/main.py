@@ -56,7 +56,7 @@ def argument_parser():
     return parser
 
 
-def run(algo, dataset, sequential=True, dataset_n="dummy", gt_path="./ground_truth"):
+def run(algo, dataset, dataset_n="dummy", gt_path="./ground_truth"):
     global GT_RES
     check_dir(gt_path)
     
@@ -68,24 +68,21 @@ def run(algo, dataset, sequential=True, dataset_n="dummy", gt_path="./ground_tru
 
     ret_dict = {"MQT" : None, f"AvgRecall" : None, f"AvgPrecision" : None}
         
-    algo.fit(dataset.X, save_index=True)
+    algo.fit(dataset.X)
     algo.load_index(dataset.X)
 
     start_time = time.time()
     if algo.range_algo:
-        if sequential:
-            res = []
-            for elem in dataset.Q:
-                res.append(algo.range_query_seq(elem, rho=config.RHO))
-        else:
-            res = algo.range_query(dataset.Q)
+        res = []
+        for elem in dataset.Q:
+            res.append(algo.range_query_seq(elem, rho=config.RHO))
+
+    elif algo.knn_algo:
+        res = []
+        for idx, elem in enumerate(dataset.Q):
+            res.append(algo.query_seq(elem, k=dataset.K[idx]))
     else:
-        if sequential:
-            res = []
-            for idx, elem in enumerate(dataset.Q):
-                res.append(algo.query_seq(elem, k=dataset.K[idx]))
-        else:
-            res = algo.query(dataset.Q)
+        raise Exception(f"{algo.__class__.__name__} is not range based or knn based")
 
     end_time = time.time()
     if algo.__class__.__name__ == "FAISS_GT":
@@ -132,10 +129,12 @@ def stream_run(algo, dataset, dataset_n="dummy", run_book="./streaming_runbook.j
         if action == "search":
             num_query_actions += 1
             q_start_time = time.time()
-            if algo.__class__.__name__ == "FAISS_HNSW" or algo.__class__.__name__ == "SCANN":
+            if algo.range_algo:
+                res = algo.range_query_seq(dataset.Q[value], rho=config.RHO)
+            elif algo.knn_algo:
                 res = algo.query_seq(dataset.Q[value], k=len(GT_RES[num_query_actions-1]))
             else:
-                res = algo.range_query_seq(dataset.Q[value], rho=config.RHO)
+                raise Exception(f"{algo.__class__.__name__} is not range based or knn based")
             q_time = time.time() - q_start_time
             preds.append(res)
             total_query_time += q_time
