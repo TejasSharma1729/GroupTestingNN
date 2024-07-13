@@ -1,0 +1,2 @@
+RHO = 0.8
+MAX_QUERIES = 10000

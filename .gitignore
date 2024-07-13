@@ -1,0 +1,40 @@
+# Logs
+logs/
+*.log
+*.log.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+*.venv
+env/
+venv/
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+*.swp
+*.swo
+
+# Compiled files
+*.class
+*.o
+*.so
+
+# Config files
+.env
+*.local
+.secret
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
