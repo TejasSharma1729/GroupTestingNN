@@ -1,5 +1,6 @@
 # Group Testing for Accurate and Efficient Range-Based Near Neighbor Search for Plagiarism Detection
-### Authors : Harsh Shah, Kashish Mittal, Ajit Rajwade (from Computer Science Department at Indian Institute of Technology Bombay)
+### Authors : Harsh Shah, Kashish Mittal, Ajit Rajwade  
+(from Computer Science Department at Indian Institute of Technology Bombay)
 
 This code repository has official implementation of paper **Group Testing for Accurate and Efficient Range-Based Near Neighbor Search for Plagiarism Detection** accepted in *European Conference on Computer Vision ECCV 2024*. 
 
@@ -106,7 +107,12 @@ Similarity distribution can be plotted using `py_src/utils/similarity_distributi
 ```
 python similarity_distribution.py --dataset-name imagenet --fetchpath datasets/imagenet/output --savepath plots/
 ```
-
+**Image Retrieval Experiments**
+To conduct class based image retrieval experiments for analysing performance for softmax and non-softmax features, use `py_src/utils/retrieval_exp.py`. Example usage:
+```
+python retrieval_exp.py --dataset-name Corel10 --fetchpath datasets/corel10/images --savepath datasets/corel10/output --respath results
+```
+Use `--no-softmax` ig you want to analyse performance without having softmax. By deafult VGG16 features are used, but `--resnet` argument for using resnet50 features.
 
 ## Limitations
 - The described method works well only with datasets having sharp decline in the similarity distribution
