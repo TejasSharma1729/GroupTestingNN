@@ -37,8 +37,8 @@ namespace GT {
         public:
             const string algo_name = "DoubleGroupTestingSumEigen";
             
-            vector<vector<int>> search_res; 
-            vector<vector<int>> gt_res; 
+            class vector<vector<int>> search_res; 
+            class vector<vector<int>> gt_res; 
 
             static string pathAppend(const string& p1, const string& p2);
             bool extractMatrix(string filename, MatrixXdRowMajor &X, bool transpose, int max_rows);
@@ -48,11 +48,13 @@ namespace GT {
             void precision_and_recall();
             void check_file(ofstream &file);
 
-            GroupTestingNN(string &data_path, string &query_path, string &result_path, string &dname, unsigned int N, unsigned int Nq, unsigned int dim, float rho);
+            GroupTestingNN(string &data_path, string &query_path, string &result_path, string &dname, 
+                unsigned int N, unsigned int Nq, unsigned int dim, float rho);
             bool load_data();
             bool build_index();
             bool save_index(const string &filename);
             bool load_index(const string &filename);
+            void search_subspans(int start_data, int end_data, int start_query, int end_query, double full_sim);
             void search(int batch_size = 0); // 0 means one batch all queries
             void search(MatrixXdRowMajor &Q, int batch_size = 0);
             void exhaustive_search();
