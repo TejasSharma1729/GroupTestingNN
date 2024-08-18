@@ -8,7 +8,6 @@
 using namespace std;
 using namespace std::chrono;
 using namespace Eigen;
-using json = nlohmann::json;
 
 namespace Eigen { 
     typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> MatrixXdRowMajor;
@@ -165,8 +164,10 @@ void GT::GroupTestingNN::precision_and_recall() {
                 truePositives++;
             }
         }
-        mean_precision += this->search_res[i].size() > 0 ? (static_cast<double>(truePositives) / this->search_res[i].size()) : 1.0;
-        mean_recall += this->gt_res[i].size() > 0 ? (static_cast<double>(truePositives) / this->gt_res[i].size()) : 1.0;
+        mean_precision += this->search_res[i].size() > 0 ? 
+                (static_cast<double>(truePositives) / this->search_res[i].size()) : 1.0;
+        mean_recall += this->gt_res[i].size() > 0 ? 
+                (static_cast<double>(truePositives) / this->gt_res[i].size()) : 1.0;
 
     }
     mean_precision /= this->gt_res.size();
@@ -210,11 +211,17 @@ GT::GroupTestingNN::GroupTestingNN(
     this->Nq = Nq;
     this->dim = dim;
 
-    this->result_path = this->pathAppend(this->pathAppend(result_path, this->algo_name), dname + "_rho" + to_string(this->rho));
+    this->result_path = this->pathAppend(this->pathAppend(result_path, this->algo_name),
+            dname + "_rho" + to_string(this->rho));
     struct stat st = {0};
     if (stat((this->result_path).c_str(), &st) == -1) {
         recursive_mkdir((this->result_path).c_str());
     }
+    ofstream faggregates;
+    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")));
+    check_file(faggregates);
+    faggregates << "Algorithm : " << this->algo_name << endl;
+    faggregates.close();
 }
 
 bool GT::GroupTestingNN::load_data() {
@@ -280,6 +287,7 @@ void GT::GroupTestingNN::search_subspans(
 
         this->search_subspans(start_data, end_data, mid_query, end_query, half_sim);
         this->search_subspans(start_data, end_data, start_query, mid_query-1, full_sim - half_sim);
+        return;
     }
     if (start_query == end_query) 
     {
@@ -290,6 +298,7 @@ void GT::GroupTestingNN::search_subspans(
 
         this->search_subspans(mid_data, end_data, start_query, end_query, half_sim);
         this->search_subspans(start_data, mid_data-1, start_query, end_query, full_sim - half_sim);
+        return;
     }
     
     double third_sim = this->X_cum.row(end_data).dot(this->Q_cum.row(end_query));
@@ -298,9 +307,10 @@ void GT::GroupTestingNN::search_subspans(
     third_sim += this->X_cum.row(mid_data-1).dot(this->Q_cum.row(mid_query-1));
 
     double half_sim = this->X_cum.row(mid_data-1).dot(this->Q_cum.row(end_query));
-    half_sim -= this->X_cum.row(mid_data-1).dot(this->Q_cum.row(mid_query-1));
+    half_sim -= (start_query > 0) ? this->X_cum.row(mid_data-1).dot(this->Q_cum.row(start_query-1)) : 0;
     half_sim -= (start_data > 0) ? this->X_cum.row(start_data-1).dot(this->Q_cum.row(end_query)) : 0;
-    half_sim += (start_data > 0 && start_query > 0) ? this->X_cum.row(start_data-1).dot(this->Q_cum.row(start_query-1)) : 0;
+    half_sim += (start_data > 0 && start_query > 0) ? this->X_cum.row(start_data-1).dot(
+            this->Q_cum.row(start_query-1)) : 0;
 
     double quart_sim = this->X_cum.row(mid_data-1).dot(this->Q_cum.row(end_query));
     quart_sim -= this->X_cum.row(mid_data-1).dot(this->Q_cum.row(mid_query-1));
@@ -313,49 +323,71 @@ void GT::GroupTestingNN::search_subspans(
     this->search_subspans(start_data, mid_data-1, start_query, mid_query-1, half_sim - quart_sim);
 }
 
-void GT::GroupTestingNN::search(int batch_size = 0) {
+void GT::GroupTestingNN::search(int batch_size) {
     if (batch_size == 0) batch_size = this->Nq;
     this->search_res.resize(this->Nq, vector<int>());
     this->ntests = 0;
 
-    for (int sq = 0; sq < this->Nq; sq += batch_size) {
+    ofstream faggregates;
+    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")), ios::app);
+    check_file(faggregates);
+
+    this->agg_qtime = 0.0;
+    for (int sq = 0; sq < (int)this->Nq; sq += batch_size) {
         auto start = high_resolution_clock::now();
-        int eq = min(sq + batch_size - 1, this->Nq - 1);
-        this->search_subspans(0, N-1, sq, eq, 
-                this->X_cum.row(this->N-1).dot(this->Q_cum.row(eq)) -
-                (sq > 0) ? this->X_cum.row(this->N-1).dot(this->Q_cum.row(sq-1)) : 0);
+        int eq = min(sq + batch_size - 1, (int)this->Nq - 1);
+        double full_sim = this->X_cum.row(this->N-1).dot(this->Q_cum.row(eq));
+        if (sq > 0) full_sim -= this->X_cum.row(this->N-1).dot(this->Q_cum.row(sq-1));
+        this->search_subspans(0, N-1, sq, eq, full_sim);
         auto stop = high_resolution_clock::now();
-        auto duration = duration_cast<microseconds>(stop - start);
-        this->agg_qtime += duration.count();
+        auto duration = duration_cast<nanoseconds>(stop - start);
+        this->agg_qtime += duration.count() / 1.0e+6;
     }
+    faggregates << "Average time for query batch size " << batch_size << 
+        " (ms) : " << this->agg_qtime/this->Nq << endl;
+    faggregates << "Number of dot products : " << this->ntests << endl;
+    faggregates.close();
 }
 
-void GT::GroupTestingNN::search(MatrixXdRowMajor &Q, int batch_size = 0) {
+void GT::GroupTestingNN::search(MatrixXdRowMajor &Q, int batch_size) {
     int Nq = Q.rows();
     if (batch_size == 0) batch_size = Nq;
     this->search_res.resize(Nq, vector<int>());
     this->createIndex(this->Q_cum, Q, Nq);
     this->ntests = 0;
 
+    ofstream faggregates;
+    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")), ios::app);
+    check_file(faggregates);
+
+    this->agg_qtime = 0.0;
     for (int sq = 0; sq < Nq; sq += batch_size) {
         auto start = high_resolution_clock::now();
         int eq = min(sq + batch_size - 1, Nq - 1);
-        this->search_subspans(0, N-1, sq, eq, 
-                this->X_cum.row(this->N-1).dot(Q.row(eq)) -
-                (sq > 0) ? this->X_cum.row(this->N-1).dot(Q.row(sq-1)) : 0);
+        double full_sim = this->X_cum.row(this->N-1).dot(this->Q_cum.row(eq));
+        if (sq > 0) full_sim -= this->X_cum.row(this->N-1).dot(this->Q_cum.row(sq-1));
+        this->search_subspans(0, N-1, sq, eq, full_sim);
         auto stop = high_resolution_clock::now();
-        auto duration = duration_cast<microseconds>(stop - start);
-        this->agg_qtime += duration.count();
+        auto duration = duration_cast<nanoseconds>(stop - start);
+        this->agg_qtime += duration.count() / 1.0e+6;
     }
+    faggregates << "Average time for query batch size " << batch_size << 
+        " (ms) : " << this->agg_qtime/Nq << endl;
+    faggregates << "Number of dot products : " << this->ntests << endl;
+    faggregates.close();
     this->createIndex(this->Q_cum, this->Q, this->Nq); 
     // restore the original query. comment above if not needed.
 }
 
 void GT::GroupTestingNN::exhaustive_search() {
     this->gt_res.resize(this->Nq, vector<int>());
+    ofstream faggregates;
+    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")), ios::app);
+    check_file(faggregates);
+
     double sim = 0;
-    for (unsigned int i = 0; i < this->Nq; i++)
-    {
+    this->agg_gt_qtime = 0.0;
+    for (unsigned int i = 0; i < this->Nq; i++) {
         cout << "Query idx : " << i << endl;
         auto start = high_resolution_clock::now();
         for (unsigned int row = 0; row < this->N; row++)
@@ -367,16 +399,24 @@ void GT::GroupTestingNN::exhaustive_search() {
             }
         }
         auto stop = high_resolution_clock::now();
-        auto duration = duration_cast<milliseconds>(stop - start);
-        agg_gt_qtime += duration.count();
+        auto duration = duration_cast<nanoseconds>(stop - start);
+        agg_gt_qtime += duration.count() / 1.0e+6;
     }
+    faggregates << "Avgerage exhaustive search query time (ms) : " << 
+        this->agg_gt_qtime/this->Nq << endl;
+    faggregates.close();
 }
 
 void GT::GroupTestingNN::exhaustive_search(MatrixXdRowMajor &Q) {
     int Nq = Q.rows();
     this->gt_res.resize(Nq, vector<int>());
+    ofstream faggregates;
+    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")), ios::app);
+    check_file(faggregates);
+
     double sim = 0;
-    for (unsigned int i = 0; i < Nq; i++)
+    this->agg_gt_qtime = 0.0;
+    for (unsigned int i = 0; i < (unsigned int)Nq; i++)
     {
         cout << "Query idx : " << i << endl;
         auto start = high_resolution_clock::now();
@@ -389,9 +429,12 @@ void GT::GroupTestingNN::exhaustive_search(MatrixXdRowMajor &Q) {
             }
         }
         auto stop = high_resolution_clock::now();
-        auto duration = duration_cast<milliseconds>(stop - start);
-        agg_gt_qtime += duration.count();
+        auto duration = duration_cast<nanoseconds>(stop - start);
+        agg_gt_qtime += duration.count() / 1.0e+6;
     }
+    faggregates << "Avgerage exhaustive search query time (ms) : " << 
+        this->agg_gt_qtime/Nq << endl;
+    faggregates.close();
 }
 
 void GT::GroupTestingNN::save_results()
@@ -404,7 +447,7 @@ void GT::GroupTestingNN::save_results()
     fgroundtruth.open(this->pathAppend(this->result_path, string("ground_truth.txt")));
     check_file(fgroundtruth);
     
-    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")));
+    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")), ios::app);
     check_file(faggregates);
 
     for (unsigned int i = 0; i < this->Nq; i++)
@@ -426,18 +469,10 @@ void GT::GroupTestingNN::save_results()
     }
 
     // Dumping aggregates
-    faggregates << "Algorithm : " << this->algo_name << endl;
-    faggregates << "Avgerage pool search query time : " << this->agg_qtime/this->Nq << endl;
-    faggregates << "Avgerage exhaustive search query time : " << this->agg_gt_qtime/this->Nq << endl;
+    // faggregates << "Algorithm : " << this->algo_name << endl;
+    // faggregates << "Avgerage pool search query time : " << this->agg_qtime/this->Nq << endl;
     faggregates << "Average precision : " << this->mean_precision << endl;
     faggregates << "Average recall : " << this->mean_recall << endl;
-    faggregates << "Number of dot products : " << this->ntests << endl;
-    faggregates << "Number of neg pools : " ;
-    for(unsigned int i = 0 ; i < this->negPools.size(); i++)
-    {
-        if (i != this->negPools.size()-1) faggregates << this->negPools[i] << " , " ;
-        else faggregates << this->negPools[i] << endl;
-    }
     
     // Safe close
     fresults.close();
