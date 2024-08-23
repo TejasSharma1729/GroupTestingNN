@@ -1,4 +1,4 @@
-#include <DB_GT_NN_SUM_EIGEN.hpp>
+#include <DB_GT_NN_SUM_CLASSWISE.hpp>
 #include <bits/stdc++.h>
 #include <cstdlib>
 #include <unistd.h>
