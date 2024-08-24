@@ -54,7 +54,7 @@ namespace GT{
         double net_naive_time = 0.0;
         double mean_precision = 0.0;
         double mean_recall = 0.0;
-        const string algo_name = "DoubleGroupTestingSumEigen";
+        const string algo_name = "DoubleGroupTestingSumClasswise";
 
         static string path_append(const string& p1, const string& p2);
         void recursive_mkdir(const char *dir);
