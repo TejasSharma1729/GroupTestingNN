@@ -200,7 +200,7 @@ void GT::GroupTestingNN::search(unsigned int batch_size) {
     }
     auto stop = high_resolution_clock::now();
     auto duration = duration_cast<nanoseconds>(stop - start);
-    this->net_naive_time = duration.count() / 1.0e+6;
+    this->net_search_time = duration.count() / 1.0e+6;
 }
 
 void GT::GroupTestingNN::exhaustive_search() {
