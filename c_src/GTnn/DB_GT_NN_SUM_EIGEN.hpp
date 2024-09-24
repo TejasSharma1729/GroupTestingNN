@@ -23,7 +23,7 @@ namespace GT {
         MatrixXdRowMajor X_cum;
         MatrixXdRowMajor Q_cum;
 
-        string data_path, query_path, result_path;
+        std::string data_path, query_path, result_path, dataset_name;
         float rho;
 
         // analysis variable 
@@ -224,6 +224,7 @@ GT::GroupTestingNN::GroupTestingNN(string &data_path, string &query_path,
     this->N = N;
     this->Nq = Nq;
     this->dim = dim;
+    this->dataset_name = dname;
 
     this->result_path = this->pathAppend(this->pathAppend(result_path, 
                                         this->algo_name),
@@ -232,11 +233,6 @@ GT::GroupTestingNN::GroupTestingNN(string &data_path, string &query_path,
     if (stat((this->result_path).c_str(), &st) == -1) {
         recursive_mkdir((this->result_path).c_str());
     }
-    ofstream faggregates;
-    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")));
-    check_file(faggregates);
-    faggregates << "Algorithm : " << this->algo_name << endl;
-    faggregates.close();
 }
 
 bool GT::GroupTestingNN::load_data() {
@@ -437,7 +433,7 @@ void GT::GroupTestingNN::save_results()
                                         string("ground_truth.txt")));
     check_file(fgroundtruth);
     
-    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")), 
+    faggregates.open(this->pathAppend(this->result_path, string("agg.txt")),
                         ios::app);
     check_file(faggregates);
 
@@ -465,6 +461,7 @@ void GT::GroupTestingNN::save_results()
 
     // Dumping aggregates
     faggregates << "Algorithm : " << this->algo_name << endl;
+    faggregates << "Dataset : " << this->dataset_name << endl;
     faggregates << "Avgerage pool search query time : " << 
                         this->agg_qtime/this->Nq << endl;
     faggregates << "Avgerage exhaustive search query time : " << 

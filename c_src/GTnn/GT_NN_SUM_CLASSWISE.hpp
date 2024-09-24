@@ -27,7 +27,7 @@ namespace GT{
         void build_index();
         bool save_index(const string &filename);
         bool load_index(const string &filename);
-        void search(unsigned int batch_size = 0); // 0 means one batch all queries
+        void search(); // 0 means one batch all queries
         void exhaustive_search();
         void save_results(); 
     
@@ -35,10 +35,10 @@ namespace GT{
         unsigned int dimention;
         unsigned int num_data;
         unsigned int num_query;
+        unsigned int query_index;
         MatrixXdRowMajor_t data_set;
         MatrixXdRowMajor_t query_set;
         MatrixXdRowMajor_t data_cum;
-        MatrixXdRowMajor_t query_cum;
         class unordered_map<unsigned int, unsigned int> index_map;
 
         std::string data_path;
@@ -54,7 +54,7 @@ namespace GT{
         double net_naive_time = 0.0;
         double mean_precision = 0.0;
         double mean_recall = 0.0;
-        const string algo_name = "DoubleGroupTestingSumClasswise";
+        const string algo_name = "GroupTestingSumClasswise";
 
         static string path_append(const string& p1, const string& p2);
         void recursive_mkdir(const char *dir);
@@ -62,18 +62,8 @@ namespace GT{
                             bool transpose, int max_rows);
         void save_matrix(string filename, MatrixXdRowMajor_t& matrix, 
                         unsigned int r, unsigned int c);
-        inline bool search_eliminated(unsigned int start_data, 
-                                        unsigned int end_data, 
-                                        unsigned int start_query, 
-                                        unsigned int end_query, 
-                                        double full_sim);
-        void search_single_data(unsigned int index, unsigned int start_query, 
-                                    unsigned int end_query, double full_sim);
-        void search_single_query(unsigned int index, unsigned int start_data, 
-                                    unsigned int end_data, double full_sim);
         void search_subspans(unsigned int start_data, unsigned int end_data, 
-                                unsigned int start_query, unsigned end_query, 
-                                double full_sim);
+                                    double full_sim);
         void precision_and_recall();
         void check_file(ofstream &file);
     };
@@ -165,42 +155,22 @@ bool GT::GroupTestingNN::load_index(const string &filename) {
                                     this->num_data);
 }
 
-void GT::GroupTestingNN::search(unsigned int batch_size) {
+void GT::GroupTestingNN::search() {
     // std::cout << "Starting search" << std::endl;
-    if (batch_size == 0) batch_size = this->num_query;
-    this->net_search_time = 0.0;
-    auto start = high_resolution_clock::now();
-    this->query_cum.resize(this->num_query, this->dimention);
-    this->query_cum.row(0) = this->query_set.row(0);
-    for (unsigned int i = 1; i < this->num_query; i++) {
-        this->query_cum.row(i) = this->query_set.row(i);
-        this->query_cum.row(i) += this->query_cum.row(i - 1);
-    }
     this->search_res.resize(this->num_query, vector<int>());
-    this->num_dot_products = 0;
-    for (unsigned int start_query = 0; start_query < this->num_query; 
-                                        start_query += batch_size) {
+    this->net_search_time = 0.0;
+    for (this->query_index = 0; this->query_index < this->num_query; 
+                                    this->query_index++) {
+        // std::cout << "Query index : " << this->query_index << std::endl;
+        auto start = high_resolution_clock::now();
+        double full_sim = this->query_set.row(this->query_index).dot(
+            this->data_cum.row(this->num_data - 1));
         this->num_dot_products++;
-        unsigned int end_query = min(start_query + batch_size - 1, 
-                                this->num_query - 1);
-        double full_sim;
-        if (start_query == 0) {
-            full_sim = this->data_cum.row(this->num_data - 1).dot(
-                            this->query_cum.row(end_query));
-        } else {
-            full_sim = this->data_cum.row(this->num_data - 1).dot(
-                            this->query_cum.row(end_query) - 
-                                this->query_cum.row(start_query - 1));
-        }
-        this->search_subspans(0, this->num_data - 1, start_query, end_query,
-                                full_sim);
+        this->search_subspans(0, this->num_data - 1, full_sim);
+        auto stop = high_resolution_clock::now();
+        auto duration = duration_cast<nanoseconds>(stop - start);
+        this->net_search_time += duration.count() / 1.0e+6;
     }
-    for (unsigned int i = 0; i < this->num_query; i++) {
-        sort(this->search_res[i].begin(), this->search_res[i].end());
-    }
-    auto stop = high_resolution_clock::now();
-    auto duration = duration_cast<nanoseconds>(stop - start);
-    this->net_search_time = duration.count() / 1.0e+6;
     // std::cout << "Finished search" << std::endl;
 }
 
@@ -359,116 +329,22 @@ void GT::GroupTestingNN::save_matrix(string filename,
     }
 }
 
-inline bool GT::GroupTestingNN::search_eliminated(unsigned int start_data, 
-                                                    unsigned int end_data,
-                                                    unsigned int start_query, 
-                                                    unsigned int end_query, 
-                                                    double full_sim) {
-    if (full_sim < threshold) {
-        return true;
-    }
-    if (start_data == end_data && start_query == end_query) {
-        this->search_res[start_query].push_back(this->index_map[start_data]);
-        return true;
-    }
-    return false;
-}
-
-void GT::GroupTestingNN::search_single_data(unsigned int index, 
-                                            unsigned int start_query, 
-                                            unsigned int end_query, 
+void GT::GroupTestingNN::search_subspans(unsigned int start_data,
+                                            unsigned int end_data, 
                                             double full_sim) {
-    if (this->search_eliminated(index, index, start_query, end_query, 
-                                full_sim)) {
-        return;
-    }
-    unsigned int mid_query = (start_query + end_query + 1) / 2;
-    double half_sim = this->data_set.row(this->index_map[index]).dot(
-        this->query_cum.row(end_query) - this->query_cum.row(mid_query - 1));
-    this->num_dot_products++;
-    this->search_single_data(index, mid_query, end_query, half_sim);
-    this->search_single_data(index, start_query, mid_query - 1, 
-                            full_sim - half_sim);
-    return;
-}
-
-void GT::GroupTestingNN::search_single_query(unsigned int index, 
-                                                unsigned int start_data,
-                                                unsigned int end_data, 
-                                                double full_sim) {
-    if (this->search_eliminated(start_data, end_data, index, index, full_sim)) {
+    if (full_sim < this->threshold) return;
+    if (start_data == end_data) {
+        this->search_res[this->query_index].push_back(
+            this->index_map[start_data]);
         return;
     }
     unsigned int mid_data = (start_data + end_data + 1) / 2;
-    double half_sim = this->query_set.row(index).dot(
+    double half_sim = this->query_set.row(this->query_index).dot(
             this->data_cum.row(end_data) - this->data_cum.row(mid_data - 1));
     this->num_dot_products++;
-    this->search_single_query(index, mid_data, end_data, half_sim);
-    this->search_single_query(index, start_data, mid_data - 1,
+    this->search_subspans(mid_data, end_data, half_sim);
+    this->search_subspans(start_data, mid_data - 1,
                             full_sim - half_sim);
-    return;
-}
-
-void GT::GroupTestingNN::search_subspans(unsigned int start_data, 
-                                            unsigned int end_data, 
-                                            unsigned int start_query, 
-                                            unsigned int end_query, 
-                                            double full_sim) {
-    if (this->search_eliminated(start_data, end_data, start_query, end_query, 
-                                full_sim)) {
-        return;
-    }
-    if (start_data == end_data) {
-        this->search_single_data(start_data, start_query, end_query, full_sim);
-        return;
-    }
-    if (start_query == end_query) {
-        this->search_single_query(start_query, start_data, end_data, full_sim);
-        return;
-    }
-    this->num_dot_products += 3;
-    unsigned int mid_data = (start_data + end_data + 1) / 2;
-    unsigned int mid_query = (start_query + end_query + 1) / 2;
-
-    double third_sim = (this->data_cum.row(end_data) - 
-                                this->data_cum.row(mid_data - 1)).dot(
-        this->query_cum.row(end_query) - this->query_cum.row(mid_query - 1));
-    double half_sim;
-    if (start_data == 0 && start_query == 0) {
-        half_sim = this->data_cum.row(mid_data - 1).dot(
-                        this->query_cum.row(end_query));
-    } else if (start_data == 0) {
-        half_sim = this->data_cum.row(mid_data - 1).dot(
-                        this->query_cum.row(end_query) - 
-                            this->query_cum.row(start_query - 1));
-    } else if (start_query == 0) {
-        half_sim = (this->data_cum.row(mid_data - 1) - 
-                            this->data_cum.row(start_data - 1)).dot(
-                        this->query_cum.row(end_query));
-    } else {
-        half_sim = (this->data_cum.row(mid_data - 1) - 
-                            this->data_cum.row(start_data - 1)).dot(
-                        this->query_cum.row(end_query) - 
-                            this->query_cum.row(start_query - 1));
-    }
-    double quart_sim;
-    if (start_data == 0) {
-        quart_sim = this->data_cum.row(mid_data - 1).dot(
-                        this->query_cum.row(end_query) - 
-                            this->query_cum.row(mid_query - 1));
-    } else {
-        quart_sim = (this->data_cum.row(mid_data - 1) - 
-                            this->data_cum.row(start_data - 1)).dot(
-                        this->query_cum.row(end_query) - 
-                            this->query_cum.row(mid_query - 1));
-    }
-    this->search_subspans(mid_data, end_data, mid_query, end_query, third_sim);
-    this->search_subspans(start_data, mid_data-1, mid_query, end_query, 
-                            quart_sim);
-    this->search_subspans(mid_data, end_data, start_query, mid_query - 1, 
-                            full_sim - half_sim - third_sim);
-    this->search_subspans(start_data, mid_data - 1, start_query, mid_query - 1, 
-                            half_sim - quart_sim);
     return;
 }
 
